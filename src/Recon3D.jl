@@ -98,7 +98,7 @@ end
     return val
 end
 
-function ray_tracing(event::Event, t, DIMX, DIMY, DIMZ)
+@inline function ray_tracing(event::Event, t, DIMX, DIMY, DIMZ)
     x1 = event.lor.P1.x
     x2 = event.lor.P2.x
     y1 = event.lor.P1.y
@@ -210,7 +210,7 @@ function ray_tracing(event::Event, t, DIMX, DIMY, DIMZ)
     return Y_min, Y_plus, Z_min, Z_plus, l_min_min, l_min_plus, l_plus_min, l_plus_plus
 end
 
-function perm(main_plane::Plane, x, y, z)
+@inline function perm(main_plane::Plane, x, y, z)
 	if main_plane == x_plane
 		return x, y, z
 	elseif main_plane == y_plane
