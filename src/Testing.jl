@@ -27,5 +27,5 @@ function gpu_recon_test()
 	a = Array(c_image);
 	save_image(a)
 
-    visualise(c_image)
+    visualise(c_image, DIMX, DIMY, DIMZ)
 end

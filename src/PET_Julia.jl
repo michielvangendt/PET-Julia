@@ -13,10 +13,10 @@ function gpu_bench_3D()
     events, = read_3D("Triple_line_source.lmdT");
     output = reconstruct3D(events, 128, 128, 128, 1);
 
-    visualise(output)
+    visualise(output, 128, 128, 128)
 
-    dimensions = [512]
-    recon_iter = 1
+    dimensions = [32, 128, 512]
+    recon_iter = 20
 
     for d in dimensions
         bench = @benchmark begin

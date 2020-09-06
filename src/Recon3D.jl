@@ -3,6 +3,101 @@ using CUDA
 include("LineOfResponse.jl")
 include("Util.jl")
 
+struct Slice
+	is_valid::Bool
+	i1::Int32
+	i2::Int32
+	i3::Int32
+	i4::Int32
+	l_min_min::Float32
+	l_min_plus::Float32
+	l_plus_min::Float32
+	l_plus_plus::Float32
+end
+
+# Calculate index of block-major order array
+@inline function calculate_index(i, j, k, DIMX, DIMY, DIMZ, bs)
+    block_i, intra_block_i = fldmod(i-1, bs)
+    block_j, intra_block_j = fldmod(j-1, bs)
+    block_k, intra_block_k = fldmod(k-1, bs)
+
+    x = bs*bs*bs*block_i + intra_block_i
+    y = DIMX*bs*bs*block_j + bs*intra_block_j
+    z = DIMX*DIMY*bs*block_k + bs*bs*intra_block_k
+
+    return x + y + z + 1
+end
+
+@inline function calculate_length(DIMX, DIMY, DIMZ, bs)
+    X = fld1(DIMX, bs)*bs
+    Y = fld1(DIMY, bs)*bs
+    Z = fld1(DIMZ, bs)*bs
+
+    return X*Y*Z
+end
+
+@inline function transform_dimensions(plane::Plane, DIMX, DIMY, DIMZ)
+    # Transform event so we can use the same code for different main planes.
+    if plane == x_plane
+        return DIMX, DIMY, DIMZ
+    elseif plane == y_plane
+        return DIMY, DIMX, DIMZ
+    else
+        return DIMZ, DIMY, DIMX
+    end
+end
+
+# Reduce a value across a warp
+@inline function reduce_warp(op, val)
+    # offset = warpsize() ÷ 2
+    # while offset > 0
+    #     val = op(val, shfl_down_sync(0xffffffff, val, offset))
+    #     offset ÷= 2
+    # end
+
+    # Loop unrolling for warpsize = 32
+    val = op(val, shfl_down_sync(0xffffffff, val, 16, 32))
+    val = op(val, shfl_down_sync(0xffffffff, val, 8, 32))
+    val = op(val, shfl_down_sync(0xffffffff, val, 4, 32))
+    val = op(val, shfl_down_sync(0xffffffff, val, 2, 32))
+    val = op(val, shfl_down_sync(0xffffffff, val, 1, 32))
+
+    return val
+end
+
+# Reduce a value across a block, using shared memory for communication
+@inline function reduce_block(op, val::T, neutral) where T
+    # shared mem for 32 partial sums
+    shared = @cuStaticSharedMem(T, 32)  # NOTE: this is an upper bound; better detect it
+
+    wid, lane = fldmod1(threadIdx().x, warpsize())
+
+    # each warp performs partial reduction
+    val = reduce_warp(op, val)
+
+    # write reduced value to shared memory
+    if lane == 1
+        @inbounds shared[wid] = val
+    end
+
+    # wait for all partial reductions
+    sync_threads()
+
+    # read from shared memory only if that warp existed
+    val = if threadIdx().x <= fld1(blockDim().x, warpsize())
+         @inbounds shared[lane]
+    else
+        neutral
+    end
+
+    # final reduce within first warp
+    if wid == 1
+        val = reduce_warp(op, val)
+    end
+
+    return val
+end
+
 function ray_tracing(event::Event, t, DIMX, DIMY, DIMZ)
     x1 = event.lor.P1.x
     x2 = event.lor.P2.x
@@ -125,65 +220,101 @@ function perm(main_plane::Plane, x, y, z)
 	end
 end
 
-function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,3}, corr::CuDeviceArray{T,3}, tmp_total_values::CuDeviceArray{T,1}, DIMX, DIMY, DIMZ) where {T}
-    t = threadIdx().x
+function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,1}, corr::CuDeviceArray{T,1}, DIMX, DIMY, DIMZ) where {T}
+    thread_i  = threadIdx().x
     index = blockIdx().x
 
-    event = events[index]
-
-    # Ray tracing
-    Y_min, Y_plus, Z_min, Z_plus, l_min_min, l_min_plus, l_plus_min, l_plus_plus = ray_tracing(event, t, DIMX, DIMY, DIMZ)
-
-    if Y_min >= 0 && Z_min >=0 && Y_plus < DIMY && Z_plus < DIMZ
-        value = 0.0
-		value += image[perm(event.mainPlane, t, Y_min+1, Z_min+1)...] * l_min_min
-		value += image[perm(event.mainPlane, t, Y_min+1, Z_plus+1)...] * l_min_plus
-		value += image[perm(event.mainPlane, t, Y_plus+1, Z_min+1)...] * l_plus_min
-		value += image[perm(event.mainPlane, t, Y_plus+1, Z_plus+1)...] * l_plus_plus
-
-        # Forward project
-        CUDA.atomic_add!(pointer(tmp_total_values, index), Float32(value))
-        CUDA.sync_threads()
-        total_value = tmp_total_values[index]
-
-        if total_value > 0
-            # Compare and back project
-			corr[perm(event.mainPlane, t, Y_min+1, Z_min+1)...] += l_min_min / total_value
-            corr[perm(event.mainPlane, t, Y_min+1, Z_plus+1)...] += l_min_plus / total_value
-            corr[perm(event.mainPlane, t, Y_plus+1, Z_min+1)...] += l_plus_min / total_value
-            corr[perm(event.mainPlane, t, Y_plus+1, Z_plus+1)...] += l_plus_plus / total_value
-        end
+	# Get event and store in shared memory
+    shared = @cuStaticSharedMem(Event, 1)
+    if thread_i == 1
+        @inbounds shared[1] = events[index]
     end
+    CUDA.sync_threads()
+    @inbounds event = shared[1]
+
+    DIMX_event, DIMY_event, DIMZ_event = transform_dimensions(event.mainPlane, DIMX, DIMY, DIMZ)
+    nr_of_iterations = fld1(DIMX_event - (thread_i-1), blockDim().x)
+	slices = @cuDynamicSharedMem(Slice, DIMX_event)
+
+    value = 0.0
+	
+	for i = 1:nr_of_iterations
+        t = thread_i + (i-1)*blockDim().x
+
+        # Ray tracing
+        Y_min, Y_plus, Z_min, Z_plus, l_min_min, l_min_plus, l_plus_min, l_plus_plus = ray_tracing(event, t, DIMX_event, DIMY_event, DIMZ_event)
+		
+		i1 = calculate_index(perm(event.mainPlane, t, Y_min+1, Z_min+1)..., DIMX, DIMY, DIMZ, 4)
+        i2 = calculate_index(perm(event.mainPlane, t, Y_min+1, Z_plus+1)..., DIMX, DIMY, DIMZ, 4)
+        i3 = calculate_index(perm(event.mainPlane, t, Y_plus+1, Z_min+1)..., DIMX, DIMY, DIMZ, 4)
+        i4 = calculate_index(perm(event.mainPlane, t, Y_plus+1, Z_plus+1)..., DIMX, DIMY, DIMZ, 4)
+
+		if Y_min >= 0 && Z_min >=0 && Y_plus < DIMY_event && Z_plus < DIMZ_event
+			@inbounds value += image[i1] * l_min_min
+            @inbounds value += image[i2] * l_min_plus
+            @inbounds value += image[i3] * l_plus_min
+            @inbounds value += image[i4] * l_plus_plus
+		
+			slices[t] = Slice(true, i1, i2, i3, i4, l_min_min, l_min_plus, l_plus_min, l_plus_plus)
+		else
+			slices[t] = Slice(false, i1, i2, i3, i4, l_min_min, l_min_plus, l_plus_min, l_plus_plus)
+		end
+	end
+	
+	# Calculate total ray length
+    total_value = reduce_block(+, convert(Float32, value), 0.0f0)
+
+    # Share total length across all threads in the block
+    shared_total_value = @cuStaticSharedMem(Float32, 1)
+    if thread_i == 1
+        @inbounds shared_total_value[1] = total_value
+    end
+    CUDA.sync_threads()
+    @inbounds total_value = shared_total_value[1]
+
+	for i = 1:nr_of_iterations
+        t = thread_i + (i-1)*blockDim().x
+		slice = slices[t]
+
+	    if slice.is_valid && total_value > 0
+	        # Compare and back project
+	        @inbounds corr[slice.i1] += slice.l_min_min / total_value
+	        @inbounds corr[slice.i2] += slice.l_min_plus / total_value
+	        @inbounds corr[slice.i3] += slice.l_plus_min / total_value
+	        @inbounds corr[slice.i4] += slice.l_plus_plus / total_value
+	    end
+	end
 
     return nothing
 end
 
 function reconstruct3D(events, DIMX, DIMY, DIMZ, recon_iters)
-  # Transfer the events from CPU memory to GPU memory
-  c_events = CUDA.CuArray(events);
+	# Transfer the events from CPU memory to GPU memory
+	c_events = CUDA.CuArray(events);
 
-  # Initialise the image array on GPU
-  c_image = CUDA.ones(Float32, DIMX, DIMY, DIMZ);
+	# Initialise the image array on GPU
+	c_image = CUDA.ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+  
+	n_threads = min(max(DIMX, DIMY, DIMZ), 128)
+	n_blocks = length(c_events)
+	n_shmem = max(DIMX, DIMY, DIMZ)*sizeof(Slice)
 
-  for k = 1:recon_iters
-    # Initialise correction matrix memory on GPU
-    c_corr = CUDA.zeros(Float32, DIMX, DIMY, DIMZ);
-    # Initialise array to store forward projection values on GPU
-    c_tmp_total_values = CUDA.zeros(Float32, length(c_events))
+	for k = 1:recon_iters
+		# Initialise correction matrix memory on GPU
+		c_corr = CUDA.zeros(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
 
-    # Schedule a kernel that performs:
-    #   - Forward projection
-    #   - Compare
-    #   - Back projection
-    CUDA.@sync @cuda blocks=length(c_events) threads=DIMX gpu_kernel(
-        c_events, c_image, c_corr, c_tmp_total_values, DIMX, DIMY, DIMZ)
+		# Schedule a kernel that performs:
+		#   - Forward projection
+		#   - Compare
+		#   - Back projection
+		@cuda blocks=n_blocks threads=n_threads shmem=n_shmem gpu_kernel(c_events, c_image, c_corr, DIMX, DIMY, DIMZ)
 
-    # Perform the update step
-    c_image = c_image .* c_corr
-  end
+		# Perform the update step
+		c_image = c_image .* c_corr
+	end
 
-  # Transfer the image estimate from GPU to CPU memory
-  image = Array(c_image)
+	# Transfer the image estimate from GPU to CPU memory
+	image = Array(c_image)
 
-  return image
+	return image
 end
