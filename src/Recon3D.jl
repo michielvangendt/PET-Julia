@@ -3,29 +3,42 @@ using CUDA
 include("LineOfResponse.jl")
 include("Util.jl")
 
-function ray_tracing(event::Opt_Event, t, DIMX, DIMY, DIMZ)
-    x1 = event.x1
-    x2 = event.x2
-	k_y = event.k_y
-	k_z = event.k_z
-	y_min_base = event.y_min_base
-	z_min_base = event.z_min_base
+function ray_tracing(event::Event, t, DIMX, DIMY, DIMZ)
+    x1 = event.lor.P1.x
+    x2 = event.lor.P2.x
+    y1 = event.lor.P1.y
+    y2 = event.lor.P2.y
+    z1 = event.lor.P1.z
+    z2 = event.lor.P2.z
 
-    y_min = y_min_base + k_y * t
-	ak_y  = abs(k_y)
-	y_plus = y_min + ak_y
+    k_y = (y2 - y1) / (x2 - x1)
+    k_z = (z2 - z1) / (x2 - x1)
+
+    i = t - DIMX/2 - 1
+
+    if k_y >= 0
+        y_min = y1 + k_y*(i-x1) + DIMY/2
+        y_plus = y1 + k_y*(i+1-x1) + DIMY/2
+    else
+        y_min = y1 + k_y*(i+1-x1) + DIMY/2
+        y_plus = y1 + k_y*(i-x1) + DIMY/2
+    end
 
     Y_min = floor(Int32, y_min) # Zero based indices
     Y_plus = floor(Int32, y_plus) # Zero based indices
 
-    z_min = z_min_base + k_z * t
-	ak_z  = abs(k_z)
-	z_plus = z_min + ak_z
+    if k_z >= 0
+        z_min = z1 + k_z*(i-x1) + DIMZ/2
+        z_plus = z1 + k_z*(i+1-x1) + DIMZ/2
+    else
+        z_min = z1 + k_z*(i+1-x1) + DIMZ/2
+        z_plus = z1 + k_z*(i-x1) + DIMZ/2
+    end
 
     Z_min = floor(Int32, z_min) # Zero based indices
     Z_plus = floor(Int32, z_plus) # Zero based indices
 
-    l = sqrt(1 + (ak_y)^2 + (ak_z)^2)
+    l = sqrt(1 + (y_plus - y_min)^2 + (z_plus - z_min)^2)
 
     l_min_min = 0.0
     l_min_plus = 0.0
@@ -42,7 +55,7 @@ function ray_tracing(event::Opt_Event, t, DIMX, DIMY, DIMZ)
             else
                 # 2-voxel case in z-direction
                 if Z_min >= -1 && Z_min < DIMZ
-                    r_z = (Z_plus - z_min)/(ak_z)
+                    r_z = (Z_plus - z_min)/(z_plus - z_min)
 
                     if Z_min > -1
                         l_min_min = l * r_z
@@ -58,7 +71,7 @@ function ray_tracing(event::Opt_Event, t, DIMX, DIMY, DIMZ)
             if Z_min == Z_plus
                 # 2-voxel case in y-direction
                 if Z_min >= 0 && Z_min < DIMZ
-                    r_y = (Y_plus - y_min)/(ak_y)
+                    r_y = (Y_plus - y_min)/(y_plus - y_min)
 
                     if Y_min > -1
                         l_min_min = l * r_y
@@ -70,8 +83,8 @@ function ray_tracing(event::Opt_Event, t, DIMX, DIMY, DIMZ)
             else
                 # 3-voxel cases
                 if Z_min >= -1 && Z_min < DIMZ
-                    r_y = (Y_plus - y_min)/(ak_y)
-                    r_z = (Z_plus - z_min)/(ak_z)
+                    r_y = (Y_plus - y_min)/(y_plus - y_min)
+                    r_z = (Z_plus - z_min)/(z_plus - z_min)
 
                     if r_y > r_z
                         if Y_min > -1 && Z_min > -1
@@ -102,8 +115,6 @@ function ray_tracing(event::Opt_Event, t, DIMX, DIMY, DIMZ)
     return Y_min, Y_plus, Z_min, Z_plus, l_min_min, l_min_plus, l_plus_min, l_plus_plus
 end
 
-
-
 function perm(main_plane::Plane, x, y, z)
 	if main_plane == x_plane
 		return x, y, z
@@ -114,7 +125,7 @@ function perm(main_plane::Plane, x, y, z)
 	end
 end
 
-function gpu_kernel(events::CuDeviceArray{Opt_Event}, image::CuDeviceArray{T,3}, corr::CuDeviceArray{T,3}, tmp_total_values::CuDeviceArray{T,1}, DIMX, DIMY, DIMZ) where {T}
+function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,3}, corr::CuDeviceArray{T,3}, tmp_total_values::CuDeviceArray{T,1}, DIMX, DIMY, DIMZ) where {T}
     t = threadIdx().x
     index = blockIdx().x
 

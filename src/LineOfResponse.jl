@@ -21,14 +21,3 @@ struct Event
 	lor::LOR
 	mainPlane::Plane
 end
-
-struct Opt_Event
-	x1::Float32
-	x2::Float32
-	k_y::Float32
-	k_z::Float32
-	y_min_base::Float32
-	z_min_base::Float32
-	dconv::Float32
-	mainPlane::Plane
-end
