@@ -21,7 +21,7 @@ function gpu_recon_test()
 	n_blocks = length(c_events)
 	n_shmem = max(DIMX, DIMY, DIMZ)*sizeof(Slice)
 
-    @cuda blocks=n_blocks threads=n_threads shmem=n_shmem gpu_kernel(c_events, c_image, c_corr, DIMX, DIMY, DIMZ)
+    CUDA.@time @cuda blocks=n_blocks threads=n_threads shmem=n_shmem gpu_kernel(c_events, c_image, c_corr, DIMX, DIMY, DIMZ)
 
     c_image = c_image .* c_corr
     c_image = c_image ./ maximum(c_image)

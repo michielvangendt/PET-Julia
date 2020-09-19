@@ -20,7 +20,7 @@ function gpu_bench_3D()
 
     for d in dimensions
         bench = @benchmark begin
-            CUDA.@time begin
+            CUDA.@sync begin
                 events, = read_3D("Triple_line_source.lmdT");
                 reconstruct3D(events, $d, $d, $d, $recon_iter);
             end;

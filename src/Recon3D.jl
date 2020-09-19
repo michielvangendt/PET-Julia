@@ -25,7 +25,7 @@ end
     y = DIMX*bs*bs*block_j + bs*intra_block_j
     z = DIMX*DIMY*bs*block_k + bs*bs*intra_block_k
 
-    return x + y + z + 1
+    return unsafe_trunc(Int32, x + y + z + 1)
 end
 
 @inline function calculate_length(DIMX, DIMY, DIMZ, bs)
@@ -255,9 +255,9 @@ function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,1}, cor
             @inbounds value += image[i3] * l_plus_min
             @inbounds value += image[i4] * l_plus_plus
 		
-			slices[t] = Slice(true, i1, i2, i3, i4, l_min_min, l_min_plus, l_plus_min, l_plus_plus)
+			@inbounds slices[t] = Slice(true, i1, i2, i3, i4, l_min_min, l_min_plus, l_plus_min, l_plus_plus)
 		else
-			slices[t] = Slice(false, i1, i2, i3, i4, l_min_min, l_min_plus, l_plus_min, l_plus_plus)
+			@inbounds slices[t] = Slice(false, i1, i2, i3, i4, l_min_min, l_min_plus, l_plus_min, l_plus_plus)
 		end
 	end
 	
@@ -274,7 +274,7 @@ function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,1}, cor
 
 	for i = 1:nr_of_iterations
         t = thread_i + (i-1)*blockDim().x
-		slice = slices[t]
+		@inbounds slice = slices[t]
 
 	    if slice.is_valid && total_value > 0
 	        # Compare and back project
