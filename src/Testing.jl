@@ -1,33 +1,62 @@
 using CUDA
+using BenchmarkTools
 
 include("LineOfResponse.jl")
 include("Util.jl")
 include("Recon3D.jl")
 include("Visualisation.jl")
 
+benchmarking = true
+
 function gpu_recon_test()
-    DIMX = 512
-    DIMY = 512
-    DIMZ = 512
+	DIMX = 133
+	DIMY = 86
+	DIMZ = 580
+	recon_iters = 4
 
-    c_image = CUDA.ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+    events, = read_3D("Prostate_Att.lmdT");
 
-    events, = read_3D("Triple_line_source.lmdT");
-    c_events = CUDA.CuArray(events);
+	CUDA.@time begin
+		c_image = reconstruct3D(events, DIMX, DIMY, DIMZ, recon_iters)
+	end
 
-    c_corr = CUDA.zeros(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
-	
-	n_threads = min(max(DIMX, DIMY, DIMZ), 128)
-	n_blocks = length(c_events)
-	n_shmem = max(DIMX, DIMY, DIMZ)*sizeof(Slice)
-
-    CUDA.@time @cuda blocks=n_blocks threads=n_threads shmem=n_shmem gpu_kernel(c_events, c_image, c_corr, DIMX, DIMY, DIMZ)
-
-    c_image = c_image .* c_corr
-    c_image = c_image ./ maximum(c_image)
-	
-	a = Array(c_image);
-	save_image(a)
+	if benchmarking
+		bench = @benchmark begin
+			CUDA.@sync begin
+				c_image = reconstruct3D($events, $DIMX, $DIMY, $DIMZ, $recon_iters)
+			end
+		end
+		bench_time = BenchmarkTools.mean(bench).time/(1000000*1000); # Gives the time in seconds
+		print("\n\nTotal GPU time $bench_time seconds \n\n\n");
+	end
 
     visualise(c_image, DIMX, DIMY, DIMZ)
+	save_image(c_image, DIMX, DIMY, DIMZ)
+end
+
+function gpu_sensmap_recon_test()
+	DIMX = 133
+	DIMY = 86
+	DIMZ = 580
+	recon_iters = 4
+
+	sensmap = read_sensmap("Data/Sensmap/sensmap_133_86_580_1000.raw", DIMX, DIMY, DIMZ);
+    events, = read_3D("Prostate_Att.lmdT");
+
+	CUDA.@time begin
+	    c_image = reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters)
+	end;
+
+	if benchmarking
+		bench = @benchmark begin
+			CUDA.@sync begin
+				c_image = reconstruct3D($events, $sensmap, $DIMX, $DIMY, $DIMZ, $recon_iters)
+			end
+		end
+		bench_time = BenchmarkTools.mean(bench).time/(1000000*1000); # Gives the time in seconds
+		print("\n\nTotal GPU time $bench_time seconds \n\n\n");
+	end
+
+	visualise(c_image, DIMX, DIMY, DIMZ)
+	save_image(c_image, DIMX, DIMY, DIMZ)
 end

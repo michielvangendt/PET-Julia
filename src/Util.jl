@@ -59,3 +59,45 @@ function read_3D(filename)
 
 	return events, array_length
 end
+
+function read_raw(filename, DIMX, DIMY, DIMZ)
+    io = open(filename,"r");
+    arr = zeros(Float32, DIMX, DIMY, DIMZ);
+    read!(io, arr);
+    close(io);
+
+    return arr
+end
+
+function read_sensmap(filename, DIMX, DIMY, DIMZ)
+	map = read_raw(filename, DIMX, DIMY, DIMZ)
+	map_bs = ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+	for j = 1:DIMY
+		for i = 1:DIMX
+			for k = 1:DIMZ
+				index = calculate_index(i, j, k, DIMX, DIMY, DIMZ, 4)
+				v = map[i, j, k]
+				if v < 0.05
+					v = 1000
+				end
+				map_bs[index] = v
+			end
+		end
+	end
+	return map_bs
+end
+
+function read_attmap(filename, DIMX, DIMY, DIMZ)
+	map = read_raw(filename, DIMX, DIMY, DIMZ)
+	map_bs = ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+	for j = 1:DIMY
+		for i = 1:DIMX
+			for k = 1:DIMZ
+				index = calculate_index(i, j, k, DIMX, DIMY, DIMZ, 4)
+				v = map[i, j, k]
+				map_bs[index] = v
+			end
+		end
+	end
+	return map_bs
+end
