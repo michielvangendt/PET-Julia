@@ -10,16 +10,18 @@ function gpu_recon_test()
     DIMY = 512
     DIMZ = 512
 
-    image = ones(Float32, DIMX, DIMY, DIMZ)
-    c_image = CUDA.CuArray(image)
+    c_image = CUDA.ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
 
-    events, = read_3D("lineSource.lmdT")
-    c_events = CUDA.CuArray(events)
+    events, = read_3D("Triple_line_source.lmdT");
+    c_events = CUDA.CuArray(events);
 
-    c_corr = CUDA.CuArray(zeros(Float32, DIMX, DIMY, DIMZ))
-    c_tmp_total_values = CUDA.CuArray(zeros(Float32, length(c_events)))
+    c_corr = CUDA.zeros(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+	
+	n_threads = min(max(DIMX, DIMY, DIMZ), 128)
+	n_blocks = length(c_events)
+	n_shmem = max(DIMX, DIMY, DIMZ)*sizeof(Slice)
 
-    @cuda blocks=length(c_events) threads=DIMX gpu_kernel(c_events, c_image, c_corr, c_tmp_total_values, DIMX, DIMY, DIMZ)
+    @cuda blocks=n_blocks threads=n_threads shmem=n_shmem gpu_kernel(c_events, c_image, c_corr, DIMX, DIMY, DIMZ)
 
     c_image = c_image .* c_corr
     c_image = c_image ./ maximum(c_image)
