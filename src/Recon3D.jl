@@ -17,9 +17,13 @@ end
 
 # Calculate index of block-major order array
 @inline function calculate_index(i, j, k, DIMX, DIMY, DIMZ, bs)
-    block_i, intra_block_i = fldmod(i-1, bs)
-    block_j, intra_block_j = fldmod(j-1, bs)
-    block_k, intra_block_k = fldmod(k-1, bs)
+    DIMX = fld1(DIMX, bs)*bs
+    DIMY = fld1(DIMY, bs)*bs
+    DIMZ = fld1(DIMZ, bs)*bs
+
+    block_i, intra_block_i = fldmod(i-Int32(1), bs)
+    block_j, intra_block_j = fldmod(j-Int32(1), bs)
+    block_k, intra_block_k = fldmod(k-Int32(1), bs)
 
     x = bs*bs*bs*block_i + intra_block_i
     y = DIMX*bs*bs*block_j + bs*intra_block_j
