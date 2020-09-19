@@ -12,23 +12,8 @@ if display_mode
 end
 
 
-function visualise(c_image::CuArray{Float32,2})
-    image = Array(c_image)
-
+function visualise(image::Array{Float32,3})
     display_mode ? imshow(image) : println("No display available")
-end
-
-function visualise(c_image::CuArray{Float32,3})
-    image = Array(c_image)
-
-    display_mode ? imshow(image) : println("No display available")
-end
-
-
-function visualise(c_image::CuArray{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
-    image = Array(c_image);
-
-    visualise(image, DIMX, DIMY, DIMZ)
 end
 
 function visualise(image::Array{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
@@ -41,33 +26,29 @@ function visualise(image::Array{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::
             end
         end
     end
-
     display_mode ? imshow(output) : println("No display available")
 end
 
-
-function visualise(cpp_image::Ptr{Float32}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
-    image = unsafe_wrap(Array, cpp_image, (DIMX, DIMY, DIMZ))
-
+function visualise(c_image::CuArray{Float32,3})
+    image = Array(c_image)
     display_mode ? imshow(image) : println("No display available")
 end
 
-function visualise(image::Array{Float32,3})
-    display_mode ? imshow(image) : println("No display available")
-end
-
-function visualise(image::Array{Float64,3})
-    display_mode ? imshow(image) : println("No display available")
-end
-
-function visualise(image::Array{Float32,2})
-    display_mode ? imshow(image) : println("No display available")
-end
-
-function save_image(c_image::CuArray{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
+function visualise(c_image::CuArray{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
     image = Array(c_image);
+    visualise(image, DIMX, DIMY, DIMZ)
+end
 
-    save_image(image, DIMX, DIMY, DIMZ)
+function save_image(image::Array{Float32,1})
+    io = open("recon.raw","w")
+    for i in eachindex(image)
+        write(io, image[i])
+    end
+    close(io)
+end
+
+function save_image(image::Array{Float32,3})
+    save_image(image[:])
 end
 
 function save_image(image::Array{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
@@ -80,20 +61,16 @@ function save_image(image::Array{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ:
             end
         end
     end
-
     save_image(output)
 end
 
-function save_image(image::Array{Float32,1})
-    io = open("recon.raw","w")
-
-    for i in eachindex(image)
-        write(io, image[i])
-    end
-
-    close(io)
+function save_image(c_image::CuArray{Float32,1}, DIMX::Integer, DIMY::Integer, DIMZ::Integer)
+    image = Array(c_image);
+    save_image(image, DIMX, DIMY, DIMZ)
 end
 
-function save_image(image::Array{Float32,3})
-    save_image(image[:])
-end
+
+
+
+
+

@@ -175,8 +175,7 @@ function reconstruct3D(events, DIMX, DIMY, DIMZ, recon_iters)
     #   - Forward projection
     #   - Compare
     #   - Back projection
-    CUDA.@sync @cuda blocks=length(c_events) threads=DIMX gpu_kernel(
-        c_events, c_image, c_corr, c_tmp_total_values, DIMX, DIMY, DIMZ)
+    @cuda blocks=length(c_events) threads=DIMX gpu_kernel(c_events, c_image, c_corr, c_tmp_total_values, DIMX, DIMY, DIMZ)
 
     # Perform the update step
     c_image = c_image .* c_corr

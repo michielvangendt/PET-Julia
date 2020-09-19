@@ -15,12 +15,14 @@ function gpu_bench_3D()
 
     visualise(output)
 
-    dimensions = [512]
-    recon_iter = 1
+    device!(4)
+
+    dimensions = [32, 128, 512]
+    recon_iter = 20
 
     for d in dimensions
         bench = @benchmark begin
-            CUDA.@time begin
+            CUDA.@sync begin
                 events, = read_3D("Triple_line_source.lmdT");
                 reconstruct3D(events, $d, $d, $d, $recon_iter);
             end;

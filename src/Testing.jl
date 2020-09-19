@@ -13,7 +13,7 @@ function gpu_recon_test()
     image = ones(Float32, DIMX, DIMY, DIMZ)
     c_image = CUDA.CuArray(image)
 
-    events, = read_3D("lineSource.lmdT")
+    events, = read_3D("Triple_line_source.lmdT")
     c_events = CUDA.CuArray(events)
 
     c_corr = CUDA.CuArray(zeros(Float32, DIMX, DIMY, DIMZ))
