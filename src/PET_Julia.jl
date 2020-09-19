@@ -15,8 +15,6 @@ function gpu_bench_3D()
 
     visualise(output)
 
-    device!(4)
-
     dimensions = [32, 128, 512]
     recon_iter = 20
 
