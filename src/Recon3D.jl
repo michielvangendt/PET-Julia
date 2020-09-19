@@ -355,7 +355,7 @@ function reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters)
     # Initialise the sensmap array on GPU
     c_sensmap = CUDA.CuArray(sensmap);
 
-    n_threads = min(max(DIMX, DIMY, DIMZ), 224)
+    n_threads = min(max(DIMX, DIMY, DIMZ), 128)
     n_blocks = length(c_events)
     n_shmem = max(DIMX, DIMY, DIMZ) * sizeof(Slice)
 
