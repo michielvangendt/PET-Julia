@@ -44,7 +44,7 @@ function median_reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters)
 		c_image = c_image .* c_corr ./ c_sensmap
 
         # Median filtering
-		c_tmp_image = CuArrays.zeros(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+		c_tmp_image = CUDA.zeros(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
 		med_threads = (4, 4, 4);
 		med_blocks = (fld1(DIMX, 4), fld1(DIMY, 4), fld1(DIMZ, 4));
 		cudacall(fun, (CuPtr{Float32}, CuPtr{Float32}, Int32, Int32, Int32), c_image, c_tmp_image, DIMX, DIMY, DIMZ; threads=med_threads, blocks=med_blocks)
