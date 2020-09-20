@@ -201,13 +201,13 @@ function gpu_all_recon_test()
 	compile_ptx(0, "src/medianFilter")
 
 	CUDA.@time begin
-	    c_image = reconstruct3D(events, sensmap, attmap, DIMX, DIMY, DIMZ, recon_iters, number_of_subsets, true)
+	    c_image = full_reconstruct3D(events, sensmap, attmap, DIMX, DIMY, DIMZ, recon_iters, number_of_subsets, true)
 	end;
 
 	if benchmarking
 		bench = @benchmark begin
 			CUDA.@sync begin
-				c_image = reconstruct3D($events, $sensmap, $attmap, $DIMX, $DIMY, $DIMZ, $recon_iters, $number_of_subsets, true)
+				c_image = full_reconstruct3D($events, $sensmap, $attmap, $DIMX, $DIMY, $DIMZ, $recon_iters, $number_of_subsets, true)
 			end
 		end
 		bench_time = BenchmarkTools.mean(bench).time/(1000000*1000); # Gives the time in seconds
