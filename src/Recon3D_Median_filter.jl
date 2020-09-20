@@ -13,7 +13,7 @@ function compile_ptx(device_n, filename)
 	nvcc = CUDA.find_cuda_binary("nvcc", toolkit)
 	flags = `-arch=sm_$(cap.major)$(cap.minor)`
 
-	run(`$nvcc $flags -ptx -o $filename.ptx $filename`)
+	run(`$nvcc $flags -ptx -o $filename.ptx $filename.cu`)
 end
 
 

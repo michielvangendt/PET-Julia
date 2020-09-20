@@ -161,7 +161,7 @@ function gpu_median_recon_test()
 	sensmap = read_sensmap("Data/Sensmap/sensmap_133_86_580_1000.raw", DIMX, DIMY, DIMZ);
     events, = read_3D("Prostate_Att.lmdT");
 
-	compile_ptx(0, "src/medianFilter.cu")
+	compile_ptx(0, "src/medianFilter")
 
 	CUDA.@time begin
 	    c_image = median_reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters)
