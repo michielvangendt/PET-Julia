@@ -302,12 +302,18 @@ end
     end
 end
 
-function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,1}, corr::CuDeviceArray{T,1}, DIMX::Int32, DIMY::Int32, DIMZ::Int32) where {T}
+@inline function calc_corr_factor(total_value, event::Event)
+	return total_value
+end
+
+function gpu_kernel(events, image::CuDeviceArray{T,1}, corr::CuDeviceArray{T,1}, DIMX::Int32, DIMY::Int32, DIMZ::Int32) where {T}
     thread_i = threadIdx().x
     index = blockIdx().x
 
     event = get_element(thread_i, index, events)
     total_value, nr_of_iterations, slices = forward_project(thread_i, event, image, DIMX, DIMY, DIMZ)
+
+	total_value = calc_corr_factor(total_value, event)
 
     back_project(thread_i, nr_of_iterations, slices, total_value, corr)
 
@@ -392,7 +398,7 @@ function OS_reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters, number
 	# Initialise the image array on GPU
 	c_image = CUDA.ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
 
-	n_threads = min(max(DIMX, DIMY, DIMZ), 224)
+	n_threads = min(max(DIMX, DIMY, DIMZ), 128)
 	n_shmem = max(DIMX, DIMY, DIMZ)*sizeof(Slice)
 
 	for k = 1:recon_iters
