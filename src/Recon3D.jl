@@ -314,6 +314,7 @@ function gpu_kernel(events::CuDeviceArray{Event}, image::CuDeviceArray{T,1}, cor
     return nothing
 end
 
+# No extensions
 function reconstruct3D(events, DIMX, DIMY, DIMZ, recon_iters)
     # Transfer the events from CPU memory to GPU memory
     c_events = CUDA.CuArray(events);
@@ -345,6 +346,7 @@ function reconstruct3D(events, DIMX, DIMY, DIMZ, recon_iters)
     return image
 end
 
+# Sensitivity correction
 function reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters)
     # Transfer the events from CPU memory to GPU memory
     c_events = CUDA.CuArray(events);
@@ -377,4 +379,42 @@ function reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters)
     image = Array(c_image)
 
     return image
+end
+
+# OSEM with sensitivity correction
+function OS_reconstruct3D(events, sensmap, DIMX, DIMY, DIMZ, recon_iters, number_of_subsets)
+	# Transfer the events per subset from CPU memory to GPU memory
+	c_events = [CUDA.CuArray(events[i:number_of_subsets:length(events)]) for i in 1:number_of_subsets]
+
+	# Initialise the sensmap array on GPU
+	c_sensmap = CUDA.CuArray(sensmap);
+
+	# Initialise the image array on GPU
+	c_image = CUDA.ones(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+
+	n_threads = min(max(DIMX, DIMY, DIMZ), 224)
+	n_shmem = max(DIMX, DIMY, DIMZ)*sizeof(Slice)
+
+	for k = 1:recon_iters
+		for subset = 1:number_of_subsets
+			# Initialise correction matrix memory on GPU
+			c_corr = CUDA.zeros(Float32, calculate_length(DIMX, DIMY, DIMZ, 4));
+
+			n_blocks = length(c_events[subset])
+
+			# Schedule a kernel that performs:
+			#   - Forward projection
+			#   - Compare
+			#   - Back projection
+			@cuda blocks=n_blocks threads=n_threads shmem=n_shmem gpu_kernel(c_events[subset], c_image, c_corr, Int32(DIMX), Int32(DIMY), Int32(DIMZ))
+
+			# Perform the update step
+			c_image = c_image .* (c_corr * number_of_subsets) ./ c_sensmap
+		end
+	end
+
+	# Transfer the image estimate from GPU to CPU memory
+	image = Array(c_image)
+
+	return image
 end
