@@ -8,7 +8,7 @@ include("Recon3D.jl")
 struct TOF_event
 	event::Event
 	time_diff::Float32
-	TOF_kernel::CuDeviceTexture{Float32, 1, CUDA.AS.Global}
+	TOF_kernel::CuDeviceArray{Float32, 1, CUDA.AS.Global}
 end
 
 
